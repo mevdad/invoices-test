@@ -2,19 +2,63 @@
 import type { Invoice, PaginatedResponse } from '~/types/invoice';
 
 const api = useInvoiceApi();
+const route = useRoute();
+
+const page = computed(() => Math.max(1, Number(route.query.page) || 1));
 
 const { data, status, error, refresh } = await useAsyncData<PaginatedResponse<Invoice>>(
     'invoices',
-    () => api.list(),
+    () => api.list(page.value),
+    { watch: [page] },
 );
 
 const invoices = computed(() => data.value?.data ?? []);
-const isLoading = computed(() => status.value === 'pending');
+const meta = computed(() => data.value?.meta);
+// Skeleton only on the very first load — keep the table during page changes.
+const isInitialLoading = computed(() => status.value === 'pending' && !data.value);
+
+// Page list with first/last always shown and ellipses for the gaps,
+// e.g. 1 … 4 5 [6] 7 8 … 20
+type PageItem = number | 'left-ellipsis' | 'right-ellipsis';
+
+const paginationItems = computed<PageItem[]>(() => {
+    if (!meta.value) {
+        return [];
+    }
+
+    const { current_page: current, last_page: last } = meta.value;
+    const delta = 1; // neighbours on each side of the current page
+    const left = Math.max(2, current - delta);
+    const right = Math.min(last - 1, current + delta);
+    const items: PageItem[] = [1];
+
+    if (left > 2) {
+        items.push('left-ellipsis');
+    }
+
+    for (let i = left; i <= right; i += 1) {
+        items.push(i);
+    }
+
+    if (right < last - 1) {
+        items.push('right-ellipsis');
+    }
+
+    if (last > 1) {
+        items.push(last);
+    }
+
+    return items;
+});
 
 useSeoMeta({ title: 'Invoices' });
 
 function openInvoice(id: string): void {
     navigateTo(`/invoices/${id}`);
+}
+
+function goToPage(target: number): void {
+    navigateTo({ query: { page: target } });
 }
 </script>
 
@@ -31,7 +75,7 @@ function openInvoice(id: string): void {
         </div>
 
         <!-- Loading skeleton -->
-        <div v-if="isLoading" class="space-y-2" aria-busy="true">
+        <div v-if="isInitialLoading" class="space-y-2" aria-busy="true">
             <div
                 v-for="n in 6"
                 :key="n"
@@ -63,7 +107,11 @@ function openInvoice(id: string): void {
         </div>
 
         <!-- Data -->
-        <div v-else class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div v-else>
+        <div
+            class="overflow-hidden rounded-lg border border-gray-200 bg-white transition-opacity"
+            :class="{ 'opacity-60': status === 'pending' }"
+        >
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
@@ -93,6 +141,55 @@ function openInvoice(id: string): void {
                     </tr>
                 </tbody>
             </table>
+        </div>
+
+        <!-- Pagination -->
+        <div
+            v-if="meta && meta.last_page > 1"
+            class="mt-4 flex items-center justify-between text-sm text-gray-600"
+        >
+            <p>Showing {{ meta.from }}–{{ meta.to }} of {{ meta.total }}</p>
+            <div class="flex items-center gap-1">
+                <button
+                    type="button"
+                    :disabled="meta.current_page <= 1 || status === 'pending'"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    @click="goToPage(meta.current_page - 1)"
+                >
+                    Prev
+                </button>
+
+                <template v-for="item in paginationItems" :key="item">
+                    <span
+                        v-if="item === 'left-ellipsis' || item === 'right-ellipsis'"
+                        class="min-w-9 px-2 py-1.5 text-center text-gray-400"
+                    >
+                        …
+                    </span>
+                    <button
+                        v-else
+                        type="button"
+                        :disabled="status === 'pending'"
+                        class="min-w-9 rounded-md border px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed"
+                        :class="item === meta.current_page
+                            ? 'border-gray-900 bg-gray-900 text-white'
+                            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+                        @click="goToPage(item)"
+                    >
+                        {{ item }}
+                    </button>
+                </template>
+
+                <button
+                    type="button"
+                    :disabled="meta.current_page >= meta.last_page || status === 'pending'"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    @click="goToPage(meta.current_page + 1)"
+                >
+                    Next
+                </button>
+            </div>
+        </div>
         </div>
     </section>
 </template>

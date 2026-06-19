@@ -15,8 +15,11 @@ export function useInvoiceApi() {
     const config = useRuntimeConfig();
     const baseURL = import.meta.server ? config.apiBase : config.public.apiBase;
 
-    function list(): Promise<PaginatedResponse<Invoice>> {
-        return $fetch<PaginatedResponse<Invoice>>('/invoices', { baseURL });
+    function list(page = 1): Promise<PaginatedResponse<Invoice>> {
+        return $fetch<PaginatedResponse<Invoice>>('/invoices', {
+            baseURL,
+            query: { page },
+        });
     }
 
     function get(id: string): Promise<ResourceResponse<Invoice>> {

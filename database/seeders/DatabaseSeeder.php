@@ -21,8 +21,8 @@ class DatabaseSeeder extends Seeder
             'email' => 'test@example.com',
         ]);
 
-        Invoice::factory(10)->pending()->create();
-        Invoice::factory(3)->approved()->create();
-        Invoice::factory(2)->rejected()->create();
+        Invoice::factory(30)->pending()->create();
+        Invoice::factory(8)->approved()->create();
+        Invoice::factory(7)->rejected()->create();
     }
 }
