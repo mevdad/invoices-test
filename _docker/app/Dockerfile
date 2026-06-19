@@ -1,0 +1,60 @@
+FROM php:8.5-fpm
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    zip \
+    curl \
+    unzip \
+    git \
+    cron \
+    supervisor \
+    libzip-dev \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libicu-dev && \
+    docker-php-ext-configure intl && \
+    docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip intl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Install Node.js & npm (build + run the Nuxt SSR server)
+COPY --from=node:22-bookworm /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-bookworm /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+# Set working directory
+WORKDIR /var/www
+
+# Remove default server definition
+RUN rm -rf /var/www/html
+
+# Copy existing application directory contents
+COPY . /var/www
+
+# Copy existing application directory permissions
+COPY --chown=www-data:www-data . /var/www
+
+# Install scheduler cron job
+COPY _docker/app/scheduler.cron /etc/cron.d/laravel-scheduler
+RUN chmod 0644 /etc/cron.d/laravel-scheduler
+
+# Configure supervisor (php-fpm + cron + queue worker + Nuxt SSR)
+COPY _docker/app/supervisord.conf /etc/supervisor/supervisord.conf
+RUN mkdir -p /var/log/supervisor
+
+# Entrypoint runs migrations before starting supervisor
+COPY _docker/app/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# 9000 = php-fpm (FastCGI), 3000 = Nuxt SSR server
+EXPOSE 9000 3000
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
