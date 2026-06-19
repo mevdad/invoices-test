@@ -98,8 +98,6 @@ Laravel — це **API-only бекенд**: валідація у Form Request, 
 - Rate limiting, OpenAPI-документація, структуроване логування, CI.
 - Фронтенд: елементи пагінації, optimistic updates, E2E-тести (Playwright) та
   компонентні тести.
-- Docker: healthcheck для `app`/nginx, `.dockerignore`, окремий multi-stage build
-  замість збірки в `entrypoint`.
 
 ### 4. Які UX edge cases враховано?
 

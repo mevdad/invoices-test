@@ -30,6 +30,9 @@ COPY --from=node:22-bookworm /usr/local/lib/node_modules /usr/local/lib/node_mod
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
+# Install Nuxt CLI globally
+RUN npm install -g nuxt
+
 # Set working directory
 WORKDIR /var/www
 
