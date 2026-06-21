@@ -103,11 +103,15 @@ services:
     environment:
       MYSQL_DATABASE: ${DB_DATABASE}
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+    # Ping over TCP (-h 127.0.0.1), NOT the socket: during first-run init MySQL
+    # answers on the socket while TCP :3306 is still down, so a socket ping would
+    # report "healthy" too early and dependents would hit "connection refused".
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_PASSWORD}"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 15
+      start_period: 30s
     container_name: mysql
 
 volumes:
