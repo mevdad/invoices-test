@@ -14,7 +14,10 @@ class InvoiceService
      */
     public function create(array $data): Invoice
     {
-        $data['status'] ??= InvoiceStatus::Pending;
+        // A new invoice always starts pending; the status is a server-owned
+        // workflow concern, never taken from the client. Transitions happen
+        // through dedicated actions (approve/reject).
+        $data['status'] = InvoiceStatus::Pending;
         $data['gross_amount'] = $this->grossAmount($data['net_amount'], $data['vat_amount']);
 
         return Invoice::create($data);

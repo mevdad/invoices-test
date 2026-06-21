@@ -65,6 +65,17 @@ class InvoiceApiTest extends TestCase
         ]);
     }
 
+    public function test_store_ignores_client_supplied_status(): void
+    {
+        // A client must not be able to create an already-approved invoice.
+        $response = $this->postJson('/api/invoices', $this->validPayload([
+            'status' => 'approved',
+        ]));
+
+        $response->assertCreated()
+            ->assertJsonPath('data.status', 'pending');
+    }
+
     public function test_store_requires_a_unique_number(): void
     {
         Invoice::factory()->create(['number' => 'INV-DUP']);

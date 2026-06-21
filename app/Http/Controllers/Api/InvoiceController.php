@@ -21,8 +21,11 @@ class InvoiceController extends Controller
      */
     public function index(): AnonymousResourceCollection
     {
+        // Tiebreaker on the unique PK keeps the order deterministic when several
+        // invoices share the same created_at (otherwise rows can shift between
+        // pages). HasUuids generates ordered UUIDs, so id ~ creation time too.
         return InvoiceResource::collection(
-            Invoice::latest()->paginate(15)
+            Invoice::latest()->orderBy('id', 'desc')->paginate(15)
         );
     }
 
