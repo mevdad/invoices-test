@@ -104,6 +104,9 @@ Laravel — це **API-only бекенд**: валідація у Form Request, 
 - Гроші як цілі (копійки) / value object; правила округлення для валют.
 - Rate limiting, OpenAPI-документація, структуроване логування, CI.
 - Фронтенд: optimistic updates, E2E-тести (Playwright) та компонентні тести.
+- Docker: ще ужати образ (прибрати `build-essential` через `$PHPIZE_DEPS` +
+  `apt-get purge`), секрети через secret manager замість `.env`, healthcheck і
+  для `nginx`.
 
 ### 4. Які UX edge cases враховано?
 
@@ -134,31 +137,50 @@ Laravel — це **API-only бекенд**: валідація у Form Request, 
 ## Запуск через Docker (рекомендовано)
 
 ```bash
-cp .env.example .env            # створити .env (gitignored)
+cp .env.example .env            # створити .env (gitignored), заповнити значення нижче
 docker compose up -d --build
 # відкрити http://localhost:5000
 ```
 
-Контейнери: `nginx` (порт хоста **5000** → 80), `app` (php-fpm + Nuxt SSR під
-supervisor + cron/scheduler + queue worker), `db` (MySQL 8). `entrypoint`
-встановлює залежності, білдить Nuxt (`.output`), піднімає міграції.
+**Образ.** Один образ `invoices-app` збирається **multi-stage**: stage `vendor`
+(composer) → залежності, stage `frontend` (`nuxt build`) → `.output`, slim
+runtime. Код, `vendor` і `.output` **запечені** в образ (іммутабельний артефакт);
+сборки в рантаймі немає.
 
-Перед `docker compose up` перевір, що у `.env` для Docker задано:
+**Контейнери — один процес на контейнер** (з одного образу, різні `command`):
+
+| Контейнер | Процес | Порт |
+| --- | --- | --- |
+| `nginx` | реверс-проксі | хост **5000** → 80 |
+| `app` | php-fpm | 9000 |
+| `nuxt` | Nuxt SSR (`node .output/server/index.mjs`) | 3000 |
+| `scheduler` | `php artisan schedule:work` | — |
+| `worker` | `php artisan queue:work` | — |
+| `migrate` | one-shot `migrate --force`, потім exit | — |
+| `db` | MySQL 8 (volume `dbdata`) | 3306 |
+
+`migrate` мігрує один раз; решта чекають його через
+`depends_on: condition: service_completed_successfully`. Процеси масштабуються
+незалежно, напр. `docker compose up -d --scale worker=3`.
+
+**Конфіг (12-factor).** Образ іммутабельний — у контейнери монтується лише
+`.env` (read-only). Для Docker у `.env` потрібно:
 
 ```
-DB_HOST=db
+DB_HOST=db                 # ім'я сервісу, не 127.0.0.1
 DB_DATABASE=invoices
-DB_USERNAME=...
-DB_PASSWORD=...
+DB_USERNAME=root           # у compose заданий лише root-користувач MySQL
+DB_PASSWORD=...            # == ${DB_PASSWORD} (root-пароль)
+APP_KEY=base64:...         # має бути заздалегідь (mount ro, key:generate прибрано)
 APP_URL=http://localhost:5000
 ```
 
 > `docker compose` читає той самий `.env` для підстановки `${DB_*}` у
 > `docker-compose.yml`, тож значення БД треба заповнити до старту.
 
-Маршрутизація: браузер → `:5000` → nginx → `/` на Nuxt (`app:3000`), `/api` на
-php-fpm. SSR усередині Docker ходить на `http://nginx/api`, браузер — на
-відносний `/api`.
+**Маршрутизація:** браузер → `:5000` → nginx → `/` на `nuxt:3000`, `/api` на
+`app:9000` (php-fpm). SSR усередині Docker ходить на `http://nginx/api`,
+браузер — на відносний `/api`.
 
 ---
 
