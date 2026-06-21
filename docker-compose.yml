@@ -1,25 +1,98 @@
+# Shared run config for every container built from the app image.
+x-app-base: &app-base
+  image: invoices-app:latest
+  restart: always
+  # Code + deps + .output are baked into the image; only configuration is
+  # injected at runtime (12-factor: config separate from the build artefact).
+  volumes:
+    - ./.env:/var/www/.env:ro
+
 services:
   nginx:
     image: nginx:latest
     ports:
       - "5000:80"
+    # Only the nginx config is mounted — nginx proxies / to Nuxt and passes
+    # /api to php-fpm by path (see nginx.conf), so it needs no app code.
     volumes:
-      - ./:/var/www/
       - ./_docker/nginx/conf.d/:/etc/nginx/conf.d/
     container_name: app_nginx
     depends_on:
-      - app
-  app:
+      app:
+        condition: service_healthy
+      nuxt:
+        condition: service_healthy
+
+  # One-shot: runs migrations, then exits. Long-running services wait for it.
+  migrate:
+    <<: *app-base
     build:
       context: .
       dockerfile: _docker/app/Dockerfile
-    restart: always
-    volumes:
-      - ./:/var/www/
+    restart: "no"
+    command: php artisan migrate --force
+    container_name: app_migrate
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # php-fpm — the FastCGI backend nginx talks to.
+  app:
+    <<: *app-base
+    command: php-fpm
     container_name: app
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "php -r \"@fsockopen('127.0.0.1', 9000) or exit(1);\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Nuxt SSR server.
+  nuxt:
+    <<: *app-base
+    command: node /var/www/.output/server/index.mjs
+    container_name: app_nuxt
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      NUXT_API_BASE: http://nginx/api
+      NUXT_PUBLIC_API_BASE: /api
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # Laravel scheduler (replaces system cron).
+  scheduler:
+    <<: *app-base
+    command: php artisan schedule:work
+    container_name: app_scheduler
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Queue worker.
+  worker:
+    <<: *app-base
+    command: php artisan queue:work --queue=default --sleep=3 --tries=3 --max-time=3600
+    container_name: app_worker
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
   db:
     image: mysql:8.0
     restart: always
@@ -34,7 +107,6 @@ services:
       timeout: 5s
       retries: 10
     container_name: mysql
-
 
 volumes:
   dbdata:
