@@ -1,6 +1,11 @@
-# Shared run config for every container built from the app image.
+# Shared build + run config for every container built from the app image.
+# All app services carry the same build/image so Compose builds it once
+# (the rest are cache hits) and never tries to pull invoices-app from a registry.
 x-app-base: &app-base
   image: invoices-app:latest
+  build:
+    context: .
+    dockerfile: _docker/app/Dockerfile
   restart: always
   # Code + deps + .output are baked into the image; only configuration is
   # injected at runtime (12-factor: config separate from the build artefact).
@@ -26,9 +31,6 @@ services:
   # One-shot: runs migrations, then exits. Long-running services wait for it.
   migrate:
     <<: *app-base
-    build:
-      context: .
-      dockerfile: _docker/app/Dockerfile
     restart: "no"
     command: php artisan migrate --force
     container_name: app_migrate
