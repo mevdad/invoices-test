@@ -65,6 +65,12 @@ const success = ref(false);
 // Keep the button busy from submit until the redirect completes.
 const isBusy = computed(() => isSubmitting.value || success.value);
 
+// Pending "show success, then redirect" timer — cleared if the component is
+// unmounted first, so navigateTo never fires after the user has left.
+let redirectTimer: ReturnType<typeof setTimeout> | undefined;
+
+onBeforeUnmount(() => clearTimeout(redirectTimer));
+
 const onSubmit = handleSubmit(async (formValues) => {
     formError.value = null;
 
@@ -82,7 +88,7 @@ const onSubmit = handleSubmit(async (formValues) => {
 
         // Show the success message briefly, then go to the new invoice.
         success.value = true;
-        setTimeout(() => navigateTo(`/invoices/${data.id}`), 900);
+        redirectTimer = setTimeout(() => navigateTo(`/invoices/${data.id}`), 900);
     } catch (error) {
         const err = error as {
             statusCode?: number;

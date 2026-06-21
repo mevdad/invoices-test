@@ -17,6 +17,20 @@ const meta = computed(() => data.value?.meta);
 // Skeleton only on the very first load — keep the table during page changes.
 const isInitialLoading = computed(() => status.value === 'pending' && !data.value);
 
+// If the requested page is past the last one (e.g. ?page=999), clamp to the
+// last real page instead of showing an empty list. Runs on SSR/initial load and
+// again whenever the data changes on the client.
+function clampPageIfOutOfRange(): Promise<unknown> | void {
+    const m = data.value?.meta;
+
+    if (m && m.total > 0 && m.current_page > m.last_page) {
+        navigateTo({ query: { page: m.last_page }, replace: true });
+    }
+}
+
+await clampPageIfOutOfRange();
+watch(data, () => clampPageIfOutOfRange());
+
 // Page list with first/last always shown and ellipses for the gaps,
 // e.g. 1 … 4 5 [6] 7 8 … 20
 type PageItem = number | 'left-ellipsis' | 'right-ellipsis';
@@ -66,12 +80,7 @@ function goToPage(target: number): void {
     <section>
         <div class="mb-6 flex items-center justify-between">
             <h1 class="text-xl font-semibold">Invoices</h1>
-            <NuxtLink
-                to="/invoices/create"
-                class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
-            >
-                New invoice
-            </NuxtLink>
+            <AppButton to="/invoices/create">New invoice</AppButton>
         </div>
 
         <!-- Loading skeleton -->
@@ -89,18 +98,13 @@ function goToPage(target: number): void {
             class="rounded-md border border-red-200 bg-red-50 p-6 text-center"
         >
             <p class="text-sm text-red-700">Failed to load invoices.</p>
-            <button
-                type="button"
-                class="mt-3 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
-                @click="refresh()"
-            >
-                Try again
-            </button>
+            <AppButton variant="danger" class="mt-3" @click="refresh()">Try again</AppButton>
         </div>
 
-        <!-- Empty state -->
+        <!-- Empty state — only when the database is genuinely empty, not when an
+             out-of-range page is being clamped. -->
         <div
-            v-else-if="invoices.length === 0"
+            v-else-if="(meta?.total ?? 0) === 0"
             class="rounded-md border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500"
         >
             No invoices yet.
@@ -150,14 +154,14 @@ function goToPage(target: number): void {
         >
             <p>Showing {{ meta.from }}–{{ meta.to }} of {{ meta.total }}</p>
             <div class="flex items-center gap-1">
-                <button
-                    type="button"
+                <AppButton
+                    variant="outline"
+                    size="sm"
                     :disabled="meta.current_page <= 1 || status === 'pending'"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                     @click="goToPage(meta.current_page - 1)"
                 >
                     Prev
-                </button>
+                </AppButton>
 
                 <template v-for="item in paginationItems" :key="item">
                     <span
@@ -166,28 +170,25 @@ function goToPage(target: number): void {
                     >
                         …
                     </span>
-                    <button
+                    <AppButton
                         v-else
-                        type="button"
+                        size="sm"
+                        :variant="item === meta.current_page ? 'primary' : 'outline'"
                         :disabled="status === 'pending'"
-                        class="min-w-9 rounded-md border px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed"
-                        :class="item === meta.current_page
-                            ? 'border-gray-900 bg-gray-900 text-white'
-                            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
                         @click="goToPage(item)"
                     >
                         {{ item }}
-                    </button>
+                    </AppButton>
                 </template>
 
-                <button
-                    type="button"
+                <AppButton
+                    variant="outline"
+                    size="sm"
                     :disabled="meta.current_page >= meta.last_page || status === 'pending'"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                     @click="goToPage(meta.current_page + 1)"
                 >
                     Next
-                </button>
+                </AppButton>
             </div>
         </div>
         </div>
